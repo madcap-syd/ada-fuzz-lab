@@ -1,0 +1,73 @@
+name: Ada AFL++ Fuzzing Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: # Позволяет запустить вручную из вкладки Actions!
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install System Dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y build-essential curl unzip wget afl++
+
+    - name: Install Alire (Ada Package Manager)
+      run: |
+        curl -L https://github.com/alire-project/alire/releases/download/v2.1.1/alr-2.1.1-bin-x86_64-linux.zip -o alire.zip
+        unzip alire.zip
+        sudo mv alr /usr/local/bin/
+
+    - name: Setup GNAT Toolchain
+      run: |
+        alr toolchain --select
+        alr --non-interactive exec -- gnatmake --version
+
+    - name: Build Fuzzing Target
+      run: |
+        # Инициализируем alire проект прямо здесь, чтобы 'alr exec' работал
+        alr init --bin fuzz_project --unassumed
+        cd fuzz_project
+        cp ../src/vulnerable_parser.ads src/
+        cp ../src/vulnerable_parser.adb src/
+        cp ../harness.c .
+        cp ../Makefile .
+        make clean
+        make
+
+    - name: Run AFL++ Fuzzer
+      run: |
+        cd fuzz_project
+        mkdir -p testcases
+        echo -n "A" > testcases/seed.txt
+        echo "Starting AFL++ fuzzing for 60 seconds..."
+        timeout 60s afl-fuzz -i testcases/ -o findings/ -t 5000 -- ./fuzz_target @@ || true
+
+    - name: Check for Crashes
+      id: check_crashes
+      run: |
+        cd fuzz_project
+        if [ -n "$(ls findings/default/crashes/ 2>/dev/null)" ] || [ -n "$(ls findings/crashes/ 2>/dev/null)" ]; then
+          echo "🚨 CRASH DETECTED! AFL++ found a vulnerability."
+          echo "crash_found=true" >> $GITHUB_OUTPUT
+          exit 1
+        else
+          echo "✅ No crashes found."
+          echo "crash_found=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Upload Crash Artifacts
+      if: steps.check_crashes.outputs.crash_found == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: afl-crash-findings
+        path: fuzz_project/findings/
