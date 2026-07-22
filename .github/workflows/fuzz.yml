@@ -1,31 +1,27 @@
-name: Ada AFL++ Fuzzing Pipeline
+name: Ada AFL++ Fuzzing Pipeline (Docker)
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch: # Позволяет запустить вручную из вкладки Actions!
+  workflow_dispatch:
 
 jobs:
   fuzz:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install System Dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y build-essential curl unzip wget afl++
-
     - name: Install Alire (Ada Package Manager)
       run: |
         curl -L https://github.com/alire-project/alire/releases/download/v2.1.1/alr-2.1.1-bin-x86_64-linux.zip -o alire.zip
         unzip alire.zip
-        sudo mv alr /usr/local/bin/
+        sudo mv bin/alr /usr/local/bin/
+        alr --version
 
     - name: Setup GNAT Toolchain
       run: |
@@ -34,7 +30,6 @@ jobs:
 
     - name: Build Fuzzing Target
       run: |
-        # Инициализируем alire проект прямо здесь, чтобы 'alr exec' работал
         alr init --bin fuzz_project --unassumed
         cd fuzz_project
         cp ../src/vulnerable_parser.ads src/
@@ -43,25 +38,44 @@ jobs:
         cp ../Makefile .
         make clean
         make
+        ls -la fuzz_target
 
-    - name: Run AFL++ Fuzzer
+    - name: Run AFL++ in Docker Container
       run: |
         cd fuzz_project
-        mkdir -p testcases
+        mkdir -p testcases findings
         echo -n "A" > testcases/seed.txt
-        echo "Starting AFL++ fuzzing for 60 seconds..."
-        timeout 60s afl-fuzz -i testcases/ -o findings/ -t 5000 -- ./fuzz_target @@ || true
+        
+        echo "🚀 Starting AFL++ in Docker container..."
+        docker run --rm -i \
+          -v $(pwd)/testcases:/in \
+          -v $(pwd)/findings:/out \
+          -v $(pwd)/fuzz_target:/target \
+          aflplusplus/aflplusplus \
+          bash -c "
+            cd /target_dir || true
+            /target -f /in/seed.txt
+            AFL_NO_UI=0 afl-fuzz -i /in -o /out -t 10000 -- /target @@
+          " || true
 
     - name: Check for Crashes
       id: check_crashes
       run: |
         cd fuzz_project
+        echo "📊 Checking findings directory..."
+        ls -la findings/ || true
+        ls -la findings/default/crashes/ 2>/dev/null || true
+        
         if [ -n "$(ls findings/default/crashes/ 2>/dev/null)" ] || [ -n "$(ls findings/crashes/ 2>/dev/null)" ]; then
-          echo "🚨 CRASH DETECTED! AFL++ found a vulnerability."
+          echo " CRASH DETECTED! AFL++ found a vulnerability."
           echo "crash_found=true" >> $GITHUB_OUTPUT
+          
+          # Показываем содержимое краша
+          echo "📋 Crash file content:"
+          cat findings/default/crashes/* 2>/dev/null | head -c 100 || cat findings/crashes/* 2>/dev/null | head -c 100
           exit 1
         else
-          echo "✅ No crashes found."
+          echo "✅ No crashes found within time limit."
           echo "crash_found=false" >> $GITHUB_OUTPUT
         fi
 
@@ -71,3 +85,14 @@ jobs:
       with:
         name: afl-crash-findings
         path: fuzz_project/findings/
+        retention-days: 30
+
+    - name: Upload AFL++ Statistics
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: aflplusplus-stats
+        path: |
+          fuzz_project/findings/default/fuzzer_stats
+          fuzz_project/findings/default/plot_data
+        retention-days: 7
