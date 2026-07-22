@@ -25,8 +25,9 @@ jobs:
 
     - name: Setup GNAT Toolchain
       run: |
-        yes "" | alr toolchain --select
-        alr --non-interactive exec -- gnatmake --version
+        export ALIRE_AUTO_ACCEPT=1
+        echo "1" | alr toolchain --select
+        alr exec -- gnatmake --version
 
     - name: Build Fuzzing Target
       run: |
@@ -46,32 +47,28 @@ jobs:
         mkdir -p testcases findings
         echo -n "A" > testcases/seed.txt
         
-        echo "🚀 Starting AFL++ in Docker container..."
-        docker run --rm -i \
+        echo " Starting AFL++ in Docker for 60 seconds..."
+        timeout 60s docker run --rm -i \
           -v $(pwd)/testcases:/in \
           -v $(pwd)/findings:/out \
           -v $(pwd)/fuzz_target:/target \
           aflplusplus/aflplusplus \
-          bash -c "
-            cd /target_dir || true
-            /target -f /in/seed.txt
-            AFL_NO_UI=0 afl-fuzz -i /in -o /out -t 10000 -- /target @@
-          " || true
+          bash -c "AFL_NO_UI=1 afl-fuzz -i /in -o /out -V 50 -- /target @@" || true
+        
+        echo " AFL++ finished, checking results..."
 
     - name: Check for Crashes
       id: check_crashes
       run: |
         cd fuzz_project
-        echo "📊 Checking findings directory..."
+        echo " Checking findings directory..."
         ls -la findings/ || true
         ls -la findings/default/crashes/ 2>/dev/null || true
+        ls -la findings/crashes/ 2>/dev/null || true
         
         if [ -n "$(ls findings/default/crashes/ 2>/dev/null)" ] || [ -n "$(ls findings/crashes/ 2>/dev/null)" ]; then
-          echo " CRASH DETECTED! AFL++ found a vulnerability."
+          echo "🚨 CRASH DETECTED! AFL++ found a vulnerability."
           echo "crash_found=true" >> $GITHUB_OUTPUT
-          
-          # Показываем содержимое краша
-          echo "📋 Crash file content:"
           cat findings/default/crashes/* 2>/dev/null | head -c 100 || cat findings/crashes/* 2>/dev/null | head -c 100
           exit 1
         else
@@ -80,19 +77,9 @@ jobs:
         fi
 
     - name: Upload Crash Artifacts
-      if: steps.check_crashes.outputs.crash_found == 'true'
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: afl-crash-findings
         path: fuzz_project/findings/
         retention-days: 30
-
-    - name: Upload AFL++ Statistics
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: aflplusplus-stats
-        path: |
-          fuzz_project/findings/default/fuzzer_stats
-          fuzz_project/findings/default/plot_data
-        retention-days: 7
