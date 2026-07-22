@@ -25,10 +25,9 @@ jobs:
 
     - name: Setup GNAT Toolchain
       run: |
-        # Автоматически выбираем первую версию GNAT (gnat_native)
-        yes "" | alr toolchain --select || true
-        # Или используем gnat_native напрямую
-        alr toolchain --install gnat_native || true
+        # Устанавливаем конкретную версию GNAT без интерактива
+        alr toolchain --install gnat_native=16.1.0
+        alr toolchain --select gnat_native=16.1.0
         alr exec -- gnatmake --version
 
     - name: Build Fuzzing Target
