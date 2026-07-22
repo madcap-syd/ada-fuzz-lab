@@ -25,7 +25,7 @@ jobs:
 
     - name: Setup GNAT Toolchain
       run: |
-        alr toolchain --select
+        alr toolchain --select --default
         alr --non-interactive exec -- gnatmake --version
 
     - name: Build Fuzzing Target
