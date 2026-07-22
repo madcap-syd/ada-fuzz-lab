@@ -16,34 +16,26 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install Alire (Ada Package Manager)
+    - name: Install GNAT and Dependencies
       run: |
-        curl -L https://github.com/alire-project/alire/releases/download/v2.1.1/alr-2.1.1-bin-x86_64-linux.zip -o alire.zip
-        unzip alire.zip
-        sudo mv bin/alr /usr/local/bin/
-        alr --version
-
-    - name: Setup GNAT Toolchain
-      run: |
-        # Устанавливаем GNAT (уже будет дефолтным)
-        alr toolchain install gnat_native
-        alr exec -- gnatmake --version
+        sudo apt update
+        sudo apt install -y gnat gnat-13 gcc
 
     - name: Build Fuzzing Target
       run: |
-        alr init --bin fuzz_project --unassumed
-        cd fuzz_project
-        cp ../src/vulnerable_parser.ads src/
-        cp ../src/vulnerable_parser.adb src/
-        cp ../harness.c .
-        cp ../Makefile .
-        make clean
-        make
+        # Компилируем Ada код
+        gnatmake -c src/vulnerable_parser.adb -O2
+        
+        # Компилируем C harness с AFL++
+        afl-gcc -c harness.c -o harness.o
+        
+        # Линкуем
+        gcc -no-pie -o fuzz_target harness.o vulnerable_parser.o -lgnarl -lgnat -lm -lpthread -ldl
+        
         ls -la fuzz_target
 
     - name: Run AFL++ in Docker Container
       run: |
-        cd fuzz_project
         mkdir -p testcases findings
         echo -n "A" > testcases/seed.txt
         
@@ -60,7 +52,6 @@ jobs:
     - name: Check for Crashes
       id: check_crashes
       run: |
-        cd fuzz_project
         echo " Checking findings directory..."
         ls -la findings/ || true
         ls -la findings/default/crashes/ 2>/dev/null || true
@@ -81,5 +72,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: afl-crash-findings
-        path: fuzz_project/findings/
+        path: findings/
         retention-days: 30
