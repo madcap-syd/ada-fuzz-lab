@@ -35,10 +35,6 @@ jobs:
         # Делаем исполняемым
         chmod +x fuzz_target
         ls -la fuzz_target
-        
-        # Тестируем с правильным seed (должен упасть!)
-        echo -n "X" > test_seed.txt
-        timeout 5 ./fuzz_target test_seed.txt || echo "✅ Program crashed as expected with exit code $?"
 
     - name: Run AFL++ Fuzzer
       run: |
@@ -46,6 +42,9 @@ jobs:
         
         # Правильный seed - буква X, которая триггерит уязвимость
         echo -n "X" > testcases/seed.txt
+        
+        # Настраиваем core_pattern для AFL++
+        echo core | sudo tee /proc/sys/kernel/core_pattern
         
         echo "🚀 Starting AFL++ for 120 seconds..."
         timeout 120s afl-fuzz -i testcases/ -o findings/ -V 100 -- ./fuzz_target @@ || true
