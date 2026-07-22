@@ -1,4 +1,4 @@
-name: Ada AFL++ Fuzzing Pipeline (Docker)
+name: Ada AFL++ Fuzzing Pipeline
 
 on:
   push:
@@ -36,35 +36,32 @@ jobs:
         chmod +x fuzz_target
         ls -la fuzz_target
         
-        # Тестируем локально
-        echo -n "A" > test_seed.txt
-        ./fuzz_target test_seed.txt || echo "Program exited with code $?"
+        # Тестируем с правильным seed (должен упасть!)
+        echo -n "X" > test_seed.txt
+        timeout 5 ./fuzz_target test_seed.txt || echo "✅ Program crashed as expected with exit code $?"
 
-    - name: Run AFL++ in Docker Container
+    - name: Run AFL++ Fuzzer
       run: |
         mkdir -p testcases findings
-        echo -n "A" > testcases/seed.txt
         
-        echo "🚀 Starting AFL++ in Docker for 120 seconds..."
-        timeout 120s docker run --rm -i \
-          -v $(pwd)/testcases:/in \
-          -v $(pwd)/findings:/out \
-          -v $(pwd)/fuzz_target:/target:ro \
-          aflplusplus/aflplusplus \
-          bash -c "chmod +x /target && AFL_NO_UI=1 afl-fuzz -i /in -o /out -V 100 -- /target @@" || true
+        # Правильный seed - буква X, которая триггерит уязвимость
+        echo -n "X" > testcases/seed.txt
         
-        echo "🔍 AFL++ finished, checking results..."
+        echo "🚀 Starting AFL++ for 120 seconds..."
+        timeout 120s afl-fuzz -i testcases/ -o findings/ -V 100 -- ./fuzz_target @@ || true
+        
+        echo " AFL++ finished, checking results..."
 
     - name: Check for Crashes
       id: check_crashes
       run: |
-        echo "📊 Checking findings directory..."
+        echo " Checking findings directory..."
         ls -la findings/ || true
         ls -la findings/default/crashes/ 2>/dev/null || true
         ls -la findings/crashes/ 2>/dev/null || true
         
         if [ -n "$(ls findings/default/crashes/ 2>/dev/null)" ] || [ -n "$(ls findings/crashes/ 2>/dev/null)" ]; then
-          echo "🚨 CRASH DETECTED! AFL++ found a vulnerability."
+          echo " CRASH DETECTED! AFL++ found a vulnerability."
           echo "crash_found=true" >> $GITHUB_OUTPUT
           cat findings/default/crashes/* 2>/dev/null | head -c 100 || cat findings/crashes/* 2>/dev/null | head -c 100
           exit 1
