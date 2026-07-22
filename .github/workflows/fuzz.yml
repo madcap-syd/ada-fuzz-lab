@@ -32,27 +32,33 @@ jobs:
         # Линкуем
         gcc -no-pie -o fuzz_target harness.o vulnerable_parser.o -lgnarl -lgnat -lm -lpthread -ldl
         
+        # Делаем исполняемым
+        chmod +x fuzz_target
         ls -la fuzz_target
+        
+        # Тестируем локально
+        echo -n "A" > test_seed.txt
+        ./fuzz_target test_seed.txt || echo "Program exited with code $?"
 
     - name: Run AFL++ in Docker Container
       run: |
         mkdir -p testcases findings
         echo -n "A" > testcases/seed.txt
         
-        echo " Starting AFL++ in Docker for 60 seconds..."
-        timeout 60s docker run --rm -i \
+        echo "🚀 Starting AFL++ in Docker for 120 seconds..."
+        timeout 120s docker run --rm -i \
           -v $(pwd)/testcases:/in \
           -v $(pwd)/findings:/out \
-          -v $(pwd)/fuzz_target:/target \
+          -v $(pwd)/fuzz_target:/target:ro \
           aflplusplus/aflplusplus \
-          bash -c "AFL_NO_UI=1 afl-fuzz -i /in -o /out -V 50 -- /target @@" || true
+          bash -c "chmod +x /target && AFL_NO_UI=1 afl-fuzz -i /in -o /out -V 100 -- /target @@" || true
         
-        echo " AFL++ finished, checking results..."
+        echo "🔍 AFL++ finished, checking results..."
 
     - name: Check for Crashes
       id: check_crashes
       run: |
-        echo " Checking findings directory..."
+        echo "📊 Checking findings directory..."
         ls -la findings/ || true
         ls -la findings/default/crashes/ 2>/dev/null || true
         ls -la findings/crashes/ 2>/dev/null || true
