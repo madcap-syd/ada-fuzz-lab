@@ -4,7 +4,11 @@
 #include <stdint.h>
 #include <string.h>
 
+extern void process_memory(void *data, size_t len);
+extern void process_data(void *data, size_t len);
+extern void calculate(void *data, size_t len);
 extern void parse_from_c(void *data, size_t len);
+extern void process_buffer(void *data, size_t len);
 
 int main(int argc, char **argv) {
     if (argc < 2) { fprintf(stderr, "Usage: %s <input>\n", argv[0]); return 1; }
@@ -17,8 +21,20 @@ int main(int argc, char **argv) {
     if (file_size > 0) fread(buffer, 1, file_size, f);
     fclose(f);
 
+    /* Fuzzing: procedure process_memory */
+    process_memory(buffer, (size_t)file_size);
+
+    /* Fuzzing: procedure process_data */
+    process_data(buffer, (size_t)file_size);
+
+    /* Fuzzing: procedure calculate */
+    calculate(buffer, (size_t)file_size);
+
     /* Fuzzing: procedure parse_from_c */
     parse_from_c(buffer, (size_t)file_size);
+
+    /* Fuzzing: procedure process_buffer */
+    process_buffer(buffer, (size_t)file_size);
 
     free(buffer);
     return 0;
