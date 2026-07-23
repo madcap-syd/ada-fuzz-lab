@@ -1,4 +1,4 @@
-name: Ada AFL++ Fuzzing Pipeline
+name: Ada AFL++ Fuzzing Pipeline (Universal)
 
 on:
   push:
@@ -19,50 +19,52 @@ jobs:
     - name: Install GNAT, AFL++ and Dependencies
       run: |
         sudo apt update
-        sudo apt install -y gnat gnat-13 gcc afl++
+        sudo apt install -y gnat gnat-13 gcc afl++ python3
+
+    - name: Generate Harness Automatically
+      run: |
+        echo "🔍 Scanning src/ for exported Ada functions..."
+        python3 scripts/generate_harness.py
+        echo ""
+        echo " Generated files:"
+        ls -la harness.c Makefile testcases/ 2>/dev/null || echo "ERROR: Generation failed!"
 
     - name: Build Fuzzing Target
       run: |
-        # Компилируем Ada код
-        gnatmake -c src/vulnerable_parser.adb -O2
-        
-        # Компилируем C harness с AFL++
-        afl-gcc -c harness.c -o harness.o
-        
-        # Линкуем
-        gcc -no-pie -o fuzz_target harness.o vulnerable_parser.o -lgnarl -lgnat -lm -lpthread -ldl
-        
-        # Делаем исполняемым
+        make clean
+        make
         chmod +x fuzz_target
         ls -la fuzz_target
+        
+        # Quick test
+        echo " Testing with seed..."
+        timeout 3 ./fuzz_target testcases/*_seed.bin 2>&1 || echo "Test completed (exit code: $?)"
 
     - name: Run AFL++ Fuzzer
       run: |
-        mkdir -p testcases findings
-        
-        # Правильный seed - буква X, которая триггерит уязвимость
-        echo -n "X" > testcases/seed.txt
-        
-        # Настраиваем core_pattern для AFL++
+        # Configure core pattern for AFL++
         echo core | sudo tee /proc/sys/kernel/core_pattern
         
+        mkdir -p findings
         echo "🚀 Starting AFL++ for 120 seconds..."
         timeout 120s afl-fuzz -i testcases/ -o findings/ -V 100 -- ./fuzz_target @@ || true
-        
-        echo " AFL++ finished, checking results..."
+        echo "🔍 AFL++ finished, checking results..."
 
     - name: Check for Crashes
       id: check_crashes
       run: |
-        echo " Checking findings directory..."
-        ls -la findings/ || true
+        echo "📊 Checking findings directory..."
         ls -la findings/default/crashes/ 2>/dev/null || true
-        ls -la findings/crashes/ 2>/dev/null || true
         
-        if [ -n "$(ls findings/default/crashes/ 2>/dev/null)" ] || [ -n "$(ls findings/crashes/ 2>/dev/null)" ]; then
+        if [ -n "$(ls findings/default/crashes/ 2>/dev/null)" ]; then
           echo " CRASH DETECTED! AFL++ found a vulnerability."
           echo "crash_found=true" >> $GITHUB_OUTPUT
-          cat findings/default/crashes/* 2>/dev/null | head -c 100 || cat findings/crashes/* 2>/dev/null | head -c 100
+          
+          echo " Crash files found:"
+          for f in findings/default/crashes/*; do
+            echo "  - $(basename "$f"): $(wc -c < "$f") bytes"
+            echo "    Content (hex): $(xxd -p "$f" | head -c 40)"
+          done
           exit 1
         else
           echo "✅ No crashes found within time limit."
@@ -76,3 +78,14 @@ jobs:
         name: afl-crash-findings
         path: findings/
         retention-days: 30
+
+    - name: Upload Generated Harness
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: generated-harness
+        path: |
+          harness.c
+          Makefile
+          testcases/
+        retention-days: 7
