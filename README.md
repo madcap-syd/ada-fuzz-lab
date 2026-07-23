@@ -163,8 +163,10 @@ Requirements
 
 Author
 madcap-syd
+
 License
 MIT License - feel free to use for learning and testing!
+
 Acknowledgments
 
     AFL++ by Michal Zalewski et al.
