@@ -5,14 +5,13 @@ with Unchecked_Deallocation;
 
 package body Use_After_Free is
    
-   type Buffer_Type is array (Natural range <>) of Interfaces.Unsigned_8;
+   type Byte is mod 256;
+   type Buffer_Type is array (Natural range <>) of Byte;
    pragma Convention (C, Buffer_Type);
    
-   type Buffer_Ptr is access Buffer_Type;
+   type Buffer_Ptr is access all Byte;
    
-   procedure Free is new Unchecked_Deallocation (Buffer_Type, Buffer_Ptr);
-   
-   Global_Ptr : Buffer_Ptr := null;
+   procedure Free is new Unchecked_Deallocation (Byte, Buffer_Ptr);
    
    procedure Process_Memory (
       Data : in System.Address;
@@ -24,34 +23,22 @@ package body Use_After_Free is
       Data_View : Byte_Array (0 .. Natural(Len) - 1);
       for Data_View'Address use Data;
       
-      Temp_Val : Interfaces.Unsigned_8 := 0;
+      Local_Buffer : Buffer_Ptr := new Byte'(0);
+      Saved_Ptr : Buffer_Ptr;
    begin
-      -- Выделяем память
-      Global_Ptr := new Buffer_Type (0 .. 99);
-      
-      -- Копируем данные
-      for I in 0 .. 99 loop
-         if I < Natural(Len) then
-            Global_Ptr(I) := Data_View(I);
-         end if;
-      end loop;
-      
-      -- Сохраняем значение ПЕРЕД освобождением
-      Temp_Val := Global_Ptr(0);
+      -- Сохраняем указатель
+      Saved_Ptr := Local_Buffer;
       
       -- Освобождаем память
-      Free (Global_Ptr);
-      Global_Ptr := null;
+      Free (Local_Buffer);
+      Local_Buffer := null;
       
-      -- УЯЗВИМОСТЬ: используем сохранённое значение
-      if Temp_Val = 16#DE# then
-         -- Имитируем UAF
+      -- УЯЗВИМОСТЬ: используем освобождённую память
+      if Data_View'Length > 0 and then Data_View(0) = 16#DE# then
          declare
-            Fake_Access : Buffer_Ptr := Buffer_Ptr'Val(16#DEAD#);
-            pragma Warnings (Off, Fake_Access);
+            Val : constant Byte := Saved_Ptr.all;  -- CRASH! Use-After-Free
          begin
-            -- Используем явное приведение для сравнения
-            if Interfaces.Unsigned_8'Val(Fake_Access(0)) = 16#BE# then
+            if Val = 16#BE# then
                Put_Line("UAF triggered!");
             end if;
          end;
