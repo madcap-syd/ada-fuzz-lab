@@ -17,10 +17,10 @@ package body Use_After_Free is
       Data : in System.Address;
       Len  : in Interfaces.C.size_t
    ) is
-      type Byte_Array is array (Natural range <>) of Interfaces.Unsigned_8;
-      pragma Convention (C, Byte_Array);
+      type Local_Array is array (Natural range <>) of Byte;
+      pragma Convention (C, Local_Array);
       
-      Data_View : Byte_Array (0 .. Natural(Len) - 1);
+      Data_View : Local_Array (0 .. Natural(Len) - 1);
       for Data_View'Address use Data;
       
       Local_Buffer : Buffer_Ptr := new Byte'(0);
@@ -38,9 +38,7 @@ package body Use_After_Free is
          declare
             Val : constant Byte := Saved_Ptr.all;  -- CRASH! Use-After-Free
          begin
-            if Val = 16#BE# then
-               Put_Line("UAF triggered!");
-            end if;
+            null;  -- Just access freed memory
          end;
       end if;
    end Process_Memory;
