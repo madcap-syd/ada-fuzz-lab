@@ -8,6 +8,7 @@ CI/CD pipeline for fuzzing Ada code using AFL++ in Docker and GitHub Actions.
 
 bash
 make clean && make
+
 ./fuzz_target testcases/valid_seed.txt
 
 ## Structure
