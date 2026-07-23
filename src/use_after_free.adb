@@ -12,7 +12,7 @@ package body Use_After_Free is
    
    procedure Free is new Unchecked_Deallocation (Buffer_Type, Buffer_Ptr);
    
-   Global_Ptr : Buffer_Ptr := null;  -- Глобальный указатель
+   Global_Ptr : Buffer_Ptr := null;
    
    procedure Process_Memory (
       Data : in System.Address;
@@ -43,15 +43,15 @@ package body Use_After_Free is
       Free (Global_Ptr);
       Global_Ptr := null;
       
-      -- УЯЗВИМОСТЬ: используем сохранённое значение (симуляция UAF)
-      -- В реальности здесь был бы доступ к уже освобождённой памяти
+      -- УЯЗВИМОСТЬ: используем сохранённое значение
       if Temp_Val = 16#DE# then
-         -- Здесь мог бы быть краш при обращении к Global_Ptr
+         -- Имитируем UAF
          declare
-            Fake_Access : Buffer_Ptr := Buffer_Ptr'Val(16#DEAD#);  -- Недействительный адрес
+            Fake_Access : Buffer_Ptr := Buffer_Ptr'Val(16#DEAD#);
             pragma Warnings (Off, Fake_Access);
          begin
-            if Fake_Access(0) = 16#BE# then  -- CRASH! Use-After-Free
+            -- Используем явное приведение для сравнения
+            if Interfaces.Unsigned_8'Val(Fake_Access(0)) = 16#BE# then
                Put_Line("UAF triggered!");
             end if;
          end;
