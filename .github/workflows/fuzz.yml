@@ -23,7 +23,7 @@ jobs:
 
     - name: Generate Harness Automatically
       run: |
-        echo "🔍 Scanning src/ for exported Ada functions..."
+        echo " Scanning src/ for exported Ada functions..."
         python3 scripts/generate_harness.py
         echo ""
         echo " Generated files:"
@@ -48,16 +48,16 @@ jobs:
         mkdir -p findings
         echo "🚀 Starting AFL++ for 120 seconds..."
         timeout 120s afl-fuzz -i testcases/ -o findings/ -V 100 -- ./fuzz_target @@ || true
-        echo "🔍 AFL++ finished, checking results..."
+        echo " AFL++ finished, checking results..."
 
     - name: Check for Crashes
       id: check_crashes
       run: |
-        echo "📊 Checking findings directory..."
+        echo " Checking findings directory..."
         ls -la findings/default/crashes/ 2>/dev/null || true
         
         if [ -n "$(ls findings/default/crashes/ 2>/dev/null)" ]; then
-          echo " CRASH DETECTED! AFL++ found a vulnerability."
+          echo "🚨 CRASH DETECTED! AFL++ found a vulnerability."
           echo "crash_found=true" >> $GITHUB_OUTPUT
           
           echo " Crash files found:"
@@ -71,12 +71,24 @@ jobs:
           echo "crash_found=false" >> $GITHUB_OUTPUT
         fi
 
+    - name: Prepare Crash Artifacts
+      if: always()
+      run: |
+        mkdir -p crash_artifacts
+        if [ -d "findings/default/crashes" ]; then
+          # Копируем файлы с безопасными именами (убираем двоеточия)
+          for f in findings/default/crashes/*; do
+            safe_name=$(basename "$f" | tr ':' '_')
+            cp "$f" "crash_artifacts/$safe_name"
+          done
+        fi
+
     - name: Upload Crash Artifacts
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: afl-crash-findings
-        path: findings/
+        path: crash_artifacts/
         retention-days: 30
 
     - name: Upload Generated Harness
