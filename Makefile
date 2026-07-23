@@ -11,7 +11,7 @@ $(TARGET): $(ADA_SRC) $(C_SRC)
 	@echo "Compiling C harness with AFL++..."
 	afl-gcc -c $(C_SRC) -o harness.o
 	@echo "Linking..."
-	gcc -no-pie -o $(TARGET) harness.o *.o -lgnarl -lgnat -lm -lpthread -ldl
+	gcc -no-pie -o $(TARGET) harness.o `find . -name '*.o' ! -name 'harness.o'` -lgnarl -lgnat -lm -lpthread -ldl
 	@echo "Build complete: $(TARGET)"
 
 clean:
